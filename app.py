@@ -1,8 +1,7 @@
 import streamlit as st
 from groq import Groq
 import PyPDF2
-import chromadb
-from sentence_transformers import SentenceTransformer
+from streamlit_chromadb_connection.chromadb_connection import ChromaDBConnection
 
 # Importaciones de los nuevos módulos
 from visualizador import extract_skills_categories, create_radar_chart, create_experience_chart, create_education_chart, create_skills_balance_chart
@@ -42,47 +41,75 @@ def chunk_text(text, chunk_size=1000, overlap=200):
 
     return chunks
 
-# Función para cargar el modelo de embeddings
-def cargar_modelo_embeddings():
-    """Carga el modelo de embeddings si no está ya cargado"""
-    if st.session_state.embedding_model is None:
-        with st.spinner("Cargando modelo de embeddings..."):
-            st.session_state.embedding_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
-    return st.session_state.embedding_model
+# Función para inicializar la conexión a ChromaDB
+def inicializar_chromadb_connection():
+    """Inicializa la conexión a ChromaDB"""
+    if "chromadb_conn" not in st.session_state:
+        config = {
+            "client": "PersistentClient",
+            "path": "/tmp/.chroma"
+        }
+        st.session_state.chromadb_conn = st.connection(
+            "chromadb",
+            type=ChromaDBConnection,
+            **config
+        )
+    return st.session_state.chromadb_conn
 
-# Función para inicializar ChromaDB
-def inicializar_chroma():
-    """Inicializa el cliente ChromaDB y crea una colección para el CV actual"""
-    if st.session_state.chroma_client is None:
-        st.session_state.chroma_client = chromadb.Client()
+# Función para almacenar chunks en ChromaDB
+def almacenar_chunks_en_chromadb(chunks, cv_name):
+    """Almacena chunks en ChromaDB usando el conector"""
+    conn = inicializar_chromadb_connection()
+    collection_name = f"cv_{cv_name.replace(' ', '_').replace('.', '_')}"
 
-    # Crear o recrear la colección para el CV actual
-    if st.session_state.collection is not None:
-        try:
-            st.session_state.chroma_client.delete_collection("cv_chunks")
-        except:
-            pass
+    # Eliminar colección si existe
+    try:
+        conn.delete_collection(collection_name)
+    except:
+        pass
 
-    st.session_state.collection = st.session_state.chroma_client.create_collection("cv_chunks")
-    return st.session_state.collection
+    # Crear nueva colección
+    conn.create_collection(collection_name)
+
+    # Convertir a formato requerido por el conector
+    documents = []
+    metadatas = []
+    ids = []
+
+    for i, chunk in enumerate(chunks):
+        documents.append(chunk)
+        metadatas.append({"source": "cv", "chunk_id": i})
+        ids.append(f"chunk_{i}")
+
+    # Agregar documentos a la colección
+    conn.add_documents(
+        collection_name=collection_name,
+        documents=documents,
+        metadatas=metadatas,
+        ids=ids
+    )
+
+    return collection_name
 
 # Función para recuperar chunks relevantes
-def recuperar_chunks_relevantes(query, n_results=3):
-    """Recupera los chunks más relevantes para una consulta"""
-    if st.session_state.collection is None or st.session_state.embedding_model is None:
+def recuperar_chunks_relevantes(query, collection_name, n_results=3):
+    """Recupera chunks relevantes usando el conector"""
+    if "chromadb_conn" not in st.session_state:
         return []
 
-    # Generar embedding para la consulta
-    query_embedding = st.session_state.embedding_model.encode(query).tolist()
+    conn = st.session_state.chromadb_conn
 
-    # Buscar chunks similares
-    results = st.session_state.collection.query(
-        query_embeddings=[query_embedding],
+    results = conn.query(
+        collection_name=collection_name,
+        query_texts=[query],
         n_results=n_results
     )
 
-    # Devolver los chunks recuperados
-    return results["documents"][0] if results["documents"] else []
+    # Extraer documentos de los resultados
+    if results and "documents" in results and len(results["documents"]) > 0:
+        return results["documents"][0]
+
+    return []
 
 # Nos conecta a la API, crear un usuario
 def crear_usuario_groq():
@@ -211,21 +238,25 @@ def configurar_modelo(cliente, modelo, mensaje, historial_mensajes=None):
             system_message = mensaje
         else:
             # Recuperar chunks relevantes para la consulta del usuario
-            chunks_relevantes = recuperar_chunks_relevantes(mensaje)
-            contexto_relevante = "\n\n".join(chunks_relevantes)
+            if "collection_name" in st.session_state:
+                chunks_relevantes = recuperar_chunks_relevantes(mensaje, st.session_state.collection_name)
+                contexto_relevante = "\n\n".join(chunks_relevantes)
 
-            # Crear prompt con el contexto relevante
-            system_message = f"""
-            Eres CareerGPT, un asesor de CV y carrera profesional de clase mundial.
+                # Crear prompt con el contexto relevante
+                system_message = f"""
+                Eres CareerGPT, un asesor de CV y carrera profesional de clase mundial.
 
-            CONTEXTO RELEVANTE DEL CV:
-            {contexto_relevante}
+                CONTEXTO RELEVANTE DEL CV:
+                {contexto_relevante}
 
-            INSTRUCCIONES:
-            - Responde basándote principalmente en la información del CV proporcionada arriba
-            - Si necesitas información que no está en el contexto, indícalo claramente
-            - Mantén un tono profesional y responde siempre en español
-            """
+                INSTRUCCIONES:
+                - Responde basándote principalmente en la información del CV proporcionada arriba
+                - Si necesitas información que no está en el contexto, indícalo claramente
+                - Mantén un tono profesional y responde siempre en español
+                """
+            else:
+                # Si no hay colección, usamos el prompt normal
+                system_message = crear_system_prompt_chat(st.session_state.cv_text)
 
         # Construir la secuencia de mensajes completa
         messages = [
@@ -277,13 +308,11 @@ def inicializar_estado():
         st.session_state.chat_history = []
     if "tipo_analisis" not in st.session_state:
         st.session_state.tipo_analisis = "detallado"
-    # Nuevas variables para ChromaDB y embeddings
-    if "embedding_model" not in st.session_state:
-        st.session_state.embedding_model = None
-    if "chroma_client" not in st.session_state:
-        st.session_state.chroma_client = None
-    if "collection" not in st.session_state:
-        st.session_state.collection = None
+    # Variables para ChromaDB Connection
+    if "chromadb_conn" not in st.session_state:
+        st.session_state.chromadb_conn = None
+    if "collection_name" not in st.session_state:
+        st.session_state.collection_name = None
 
 # Pantalla de configuración de API Key
 def configurar_api_key():
@@ -429,20 +458,13 @@ def configurar_pagina():
         st.session_state.cv_text = cv_text
         st.session_state.cv_chunks = chunk_text(cv_text)
 
-        # Inicializar ChromaDB y cargar el modelo de embeddings
-        modelo_embeddings = cargar_modelo_embeddings()
-        collection = inicializar_chroma()
-
-        # Generar embeddings para cada chunk y almacenarlos
-        with st.spinner("Procesando CV y generando embeddings..."):
-            for i, chunk in enumerate(st.session_state.cv_chunks):
-                embeddings = modelo_embeddings.encode(chunk).tolist()
-                collection.add(
-                    documents=[chunk],
-                    embeddings=[embeddings],
-                    metadatas=[{"source": "cv", "chunk_id": i}],
-                    ids=[f"chunk_{i}"]
-                )
+        # Inicializar ChromaDB connection y almacenar chunks
+        with st.spinner("Procesando CV y generando vector database..."):
+            collection_name = almacenar_chunks_en_chromadb(
+                st.session_state.cv_chunks,
+                uploaded_file.name
+            )
+            st.session_state.collection_name = collection_name
 
         st.sidebar.success(f"CV cargado y vectorizado: {uploaded_file.name}")
 
