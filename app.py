@@ -85,6 +85,53 @@ def crear_system_prompt_avanzado(cv_text):
     RESPONDE SIEMPRE EN ESPAÑOL.
     """
 
+# Crear un system prompt conciso con correcciones específicas y ejemplos prácticos
+def crear_system_prompt_conciso(cv_text):
+    return f"""
+    Eres CV-Expert, un asesor especializado en optimización de currículum con enfoque directo y práctico.
+
+    TU TAREA:
+    Analiza el CV a continuación e identifica exactamente qué cambios específicos deben realizarse para mejorarlo.
+
+    EL CV A ANALIZAR:
+    {cv_text}
+
+    FORMATO DE RESPUESTA (OBLIGATORIO):
+    Para cada área de mejora, proporciona:
+    1. El problema concreto identificado
+    2. La corrección específica a realizar
+    3. Un ejemplo "antes/después" que muestre claramente el cambio
+
+    ÁREAS DE ANÁLISIS:
+
+    1. OPTIMIZACIÓN ATS (máximo 5 correcciones)
+       Identifica términos clave faltantes o secciones que deberían reordenarse.
+       Ejemplo: "Añadir 'project management' como habilidad clave en la sección de competencias."
+
+    2. LOGROS CUANTIFICABLES (máximo 5 correcciones)
+       Identifica experiencias que carecen de métricas o resultados concretos.
+       Ejemplo: Cambiar "Desarrollé una aplicación web" por "Desarrollé una aplicación web que redujo el tiempo de procesamiento en un 35% y aumentó la satisfacción del cliente en un 40%."
+
+    3. HABILIDADES CRÍTICAS (máximo 5 correcciones)
+       Identifica habilidades faltantes o subestimadas que serían valiosas destacar.
+       Ejemplo: "Añadir experiencia en metodologías ágiles en la sección de habilidades: 'Implementación de Scrum en equipos de 5-8 personas'."
+
+    4. ESTRUCTURA Y FORMATO (máximo 5 correcciones)
+       Identifica problemas de jerarquía visual o secciones mal organizadas.
+       Ejemplo: "Mover la sección 'Educación' después de 'Experiencia Laboral' para destacar primero la experiencia práctica."
+
+    5. PROPUESTA DE VALOR (máximo 5 correcciones)
+       Identifica cómo mejorar el resumen o perfil profesional para destacar valor único.
+       Ejemplo: "Reescribir el resumen profesional enfatizando experiencia en optimización de procesos y liderazgo técnico."
+
+    REGLAS ESTRICTAS:
+    - NO proporciones análisis general - solo correcciones específicas y accionables
+    - Cada corrección DEBE incluir un ejemplo concreto de cómo implementarla
+    - Sé directo y preciso - identifica exactamente dónde y qué cambiar
+    - Limita tus respuestas a las correcciones más impactantes en cada categoría
+    - Responde SIEMPRE en español
+    """
+
 # Crear un system prompt para el chat continuo
 def crear_system_prompt_chat(cv_text):
     return f"""
@@ -170,6 +217,8 @@ def inicializar_estado():
         st.session_state.portfolio_suggestions = None
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
+    if "tipo_analisis" not in st.session_state:
+        st.session_state.tipo_analisis = "detallado"
 
 # Pantalla de configuración de API Key
 def configurar_api_key():
@@ -253,9 +302,15 @@ def analizar_cv_automaticamente():
         st.warning("Por favor, sube un CV primero.")
         return
 
-    # Usar el nuevo system prompt avanzado
-    mensaje = crear_system_prompt_avanzado(cv_text)
-    actualizar_historial("user", "Analiza este CV y proporciona un análisis profesional detallado.", "🧚‍♀️")
+    # Determinar qué tipo de análisis realizar basado en la selección del usuario
+    if st.session_state.tipo_analisis == "detallado":
+        mensaje = crear_system_prompt_avanzado(cv_text)
+        instruccion_usuario = "Analiza este CV y proporciona un análisis profesional detallado."
+    else:  # conciso
+        mensaje = crear_system_prompt_conciso(cv_text)
+        instruccion_usuario = "Analiza este CV y proporciona correcciones específicas y accionables."
+
+    actualizar_historial("user", instruccion_usuario, "🧚‍♀️")
 
     clienteUsuario = crear_usuario_groq()
     # Usamos el modelo más potente para el análisis inicial
@@ -288,6 +343,15 @@ def configurar_pagina():
         MODELO,
         index=0
     )
+
+    # Selector de tipo de análisis
+    tipo_analisis = st.sidebar.radio(
+        "Tipo de análisis de CV",
+        ["detallado", "conciso"],
+        index=0,
+        help="Detallado: análisis completo y general. Conciso: correcciones específicas con ejemplos."
+    )
+    st.session_state.tipo_analisis = tipo_analisis
 
     # Uploader de CV
     uploaded_file = st.sidebar.file_uploader("Sube tu CV en PDF", type="pdf")
@@ -388,6 +452,18 @@ def main():
     if st.session_state.tab_selected == "Chat básico":
         # Código existente del chat
         area_chat() # pone en la web el contenedor del chat
+
+        # Si el CV ya ha sido analizado, mostrar botón para reanalizar con formato diferente
+        if st.session_state.cv_analizado:
+            if st.button("Reanalizar CV con nuevo formato"):
+                # Cambiamos el estado para permitir un nuevo análisis
+                st.session_state.cv_analizado = False
+                # Limpiamos el historial de mensajes
+                st.session_state.mensajes = []
+                st.session_state.chat_history = []
+                # Volvemos a ejecutar el análisis
+                analizar_cv_automaticamente()
+                st.rerun()
 
         # Input de chat - Permite continuar la conversación después del análisis inicial
         mensaje = st.chat_input("Haz preguntas sobre tu CV o pide más recomendaciones...")
