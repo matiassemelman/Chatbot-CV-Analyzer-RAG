@@ -54,24 +54,90 @@ def crear_usuario_groq():
         # Si no hay clave configurada, devuelve None
         return None
 
+# Crear un system prompt avanzado en español para análisis de CV
+def crear_system_prompt_avanzado(cv_text):
+    return f"""
+    Eres CareerGPT, el experto líder mundial en análisis de CV con más de 25 años de experiencia en múltiples industrias.
+
+    TU TAREA:
+    Analiza el CV a continuación con precisión y proporciona insights de nivel ejecutivo que normalmente costarían más de 500€ de los mejores reclutadores.
+
+    EL CV A ANALIZAR:
+    {cv_text}
+
+    MARCO DE ANÁLISIS (obligatorio):
+    1. IDENTIDAD PROFESIONAL (Fortalezas principales, propuesta de valor única, marca profesional)
+    2. ANÁLISIS DE TRAYECTORIA LABORAL (Coherencia de carrera, lógica de progresión, posible techo de crecimiento)
+    3. ARQUITECTURA DE HABILIDADES (Ratio habilidades técnicas:blandas, relevancia de habilidades para tendencias actuales del mercado, identificación de brechas de habilidades)
+    4. CALIDAD DE LOGROS (Métricas de impacto, cuantificación de resultados, alineación de logros con posiciones)
+    5. POSICIONAMIENTO DE MERCADO (Demanda de la industria para este perfil, optimización de rango salarial, ventaja competitiva)
+    6. PUNTUACIÓN DE OPTIMIZACIÓN ATS (Densidad de palabras clave, compatibilidad de formato, potencial de pasar filtros)
+    7. EVALUACIÓN DE PRESENTACIÓN (Jerarquía de información, claridad, tono profesional)
+
+    REQUISITOS DE RESPUESTA:
+    - Sé brutalmente honesto pero constructivamente crítico
+    - Utiliza insights basados en datos en lugar de consejos genéricos
+    - Proporciona recomendaciones específicas y accionables con ejemplos
+    - Mantén un tono analítico y estratégico con perspectivas de nivel ejecutivo
+    - Prioriza la calidad del análisis sobre la exhaustividad
+
+    IMPORTANTE: Tu análisis debe ser comparable a lo que proporcionaría un consultor de CV de primer nivel, no una retroalimentación genérica.
+    RESPONDE SIEMPRE EN ESPAÑOL.
+    """
+
+# Crear un system prompt para el chat continuo
+def crear_system_prompt_chat(cv_text):
+    return f"""
+    Eres CareerGPT, un asesor de CV y carrera profesional de clase mundial con experiencia en:
+    - Optimización de CV y compatibilidad con sistemas ATS
+    - Estrategia de carrera y planificación de progresión
+    - Expectativas y estándares específicos de la industria
+    - Preparación para entrevistas y marca personal
+
+    EL CV QUE SE ESTÁ ANALIZANDO:
+    {cv_text[:2000]}...
+
+    DIRECTRICES:
+    - Proporciona consejos específicos y accionables basados en el contenido del CV
+    - Haz referencia a secciones específicas del CV cuando sea relevante
+    - Mantén un tono profesional con recomendaciones basadas en evidencia
+    - Cuando tengas dudas, aclara antes de dar consejos potencialmente engañosos
+    - Responde siempre en español con un lenguaje profesional pero accesible
+
+    RESPONDE SIEMPRE EN ESPAÑOL.
+    """
+
 # Configurar el modelo con contexto del CV cuando sea apropiado
-def configurar_modelo(cliente, modelo, mensaje):
+def configurar_modelo(cliente, modelo, mensaje, historial_mensajes=None):
+    if historial_mensajes is None:
+        historial_mensajes = []
+
     # Si tenemos un CV cargado y no es un análisis automático
-    if "cv_text" in st.session_state and st.session_state.cv_text and not mensaje.startswith("Eres un experto"):
-        # Añadir contexto del CV al mensaje
-        mensaje_con_contexto = f"""
-        Eres un asistente experto en analizar CVs y proporcionar retroalimentación útil.
+    if "cv_text" in st.session_state and st.session_state.cv_text:
+        # Usar el system prompt adecuado según si es análisis automático o chat continuo
+        if mensaje.startswith("Eres CareerGPT"):
+            # Es un prompt de análisis ya formateado, lo usamos directamente
+            system_message = mensaje
+        else:
+            # Es un mensaje de usuario normal, añadimos el context del CV
+            system_message = crear_system_prompt_chat(st.session_state.cv_text)
 
-        El usuario ha cargado un CV con el siguiente contenido:
-        {st.session_state.cv_text[:3000]}...
+        # Construir la secuencia de mensajes completa
+        messages = [
+            {"role": "system", "content": system_message}
+        ]
 
-        Consulta del usuario: {mensaje}
+        # Si hay historial de mensajes previos, los incluimos
+        if historial_mensajes:
+            messages.extend(historial_mensajes)
 
-        Responde de manera útil, específica y concisa.
-        """
+        # Añadimos el mensaje actual si no es un análisis automático
+        if not mensaje.startswith("Eres CareerGPT"):
+            messages.append({"role": "user", "content": mensaje})
+
         return cliente.chat.completions.create(
             model=modelo,
-            messages=[{"role": "user", "content": mensaje_con_contexto}],
+            messages=messages,
             stream=True
         )
     else:
@@ -102,6 +168,8 @@ def inicializar_estado():
         st.session_state.career_paths = None
     if "portfolio_suggestions" not in st.session_state:
         st.session_state.portfolio_suggestions = None
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
 
 # Pantalla de configuración de API Key
 def configurar_api_key():
@@ -130,9 +198,16 @@ def configurar_api_key():
             st.error("Por favor, ingresa una API Key válida")
 
 def actualizar_historial(rol, contenido, avatar):
+    # Añadimos el mensaje al historial visible
     st.session_state.mensajes.append(
         {"role": rol, "content": contenido, "avatar": avatar}
     )
+
+    # Añadimos al historial para el contexto del modelo
+    if rol == "user":
+        st.session_state.chat_history.append({"role": "user", "content": contenido})
+    elif rol == "assistant":
+        st.session_state.chat_history.append({"role": "assistant", "content": contenido})
 
 def mostrar_historial():
     for mensaje in st.session_state.mensajes:
@@ -166,26 +241,17 @@ def analizar_cv_automaticamente():
         st.warning("Por favor, sube un CV primero.")
         return
 
-    analysis_prompt = """
-    Eres un experto en recursos humanos especializado en analizar CVs.
-    Analiza el siguiente CV y proporciona:
-
-    1. Un resumen de fortalezas
-    2. Áreas de mejora
-    3. Recomendaciones específicas
-
-    CV a analizar:
-    {cv_text}
-
-    Responde de manera concisa y útil.
-    """
-
-    mensaje = analysis_prompt.format(cv_text=cv_text)
-    actualizar_historial("user", "Analiza este CV y proporciona recomendaciones de mejora.", "🧚‍♀️")
+    # Usar el nuevo system prompt avanzado
+    mensaje = crear_system_prompt_avanzado(cv_text)
+    actualizar_historial("user", "Analiza este CV y proporciona un análisis profesional detallado.", "🧚‍♀️")
 
     clienteUsuario = crear_usuario_groq()
     # Usamos el modelo más potente para el análisis inicial
-    chat_completo = configurar_modelo(clienteUsuario, "llama3-70b-8192", mensaje)
+    chat_completo = clienteUsuario.chat.completions.create(
+        model="llama3-70b-8192",
+        messages=[{"role": "system", "content": mensaje}],
+        stream=True
+    )
 
     if chat_completo:
         with st.chat_message("assistant"):
@@ -230,9 +296,11 @@ def configurar_pagina():
         st.session_state.ats_results = None
         st.session_state.career_paths = None
         st.session_state.portfolio_suggestions = None
+        # Reiniciamos el historial de chat para el contexto del modelo
+        st.session_state.chat_history = []
+        # Limpiar historial de chat visible para nuevo CV
+        st.session_state.mensajes = []
 
-        # Ejecutar análisis automáticamente cuando se carga un nuevo CV
-        st.session_state.mensajes = [] # Limpiar historial de chat para nuevo CV
         # Solo ejecutamos el análisis automático si estamos en la pestaña de chat básico
         if st.session_state.tab_selected == "Chat básico":
             analizar_cv_automaticamente()
@@ -277,7 +345,15 @@ def main():
 
         if mensaje:
             actualizar_historial("user", mensaje, "🧚‍♀️") # Mostramos el mensaje del usuario
-            chat_completo = configurar_modelo(clienteUsuario, modelo, mensaje) # obteniendo la respuesta
+
+            # Pasar el historial de chat para contexto
+            chat_completo = configurar_modelo(
+                clienteUsuario,
+                modelo,
+                mensaje,
+                historial_mensajes=st.session_state.chat_history
+            )
+
             if chat_completo: # verificamos que tenga contenido
                 with st.chat_message("assistant"):
                     respuesta_completa = st.write_stream(generar_respuesta(chat_completo))
