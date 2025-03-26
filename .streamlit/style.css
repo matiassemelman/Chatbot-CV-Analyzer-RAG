@@ -1,0 +1,51 @@
+/* Estilos futuristas para CV Analyzer */
+
+/* Efecto para contenedores principales */
+div.stApp {
+    background-image:
+        radial-gradient(circle at top right, rgba(2, 84, 100, 0.1), transparent 25%),
+        radial-gradient(circle at bottom left, rgba(78, 6, 111, 0.1), transparent 25%);
+}
+
+/* Estilo para tarjetas y contenedores */
+div.stContainer, div[data-testid="stDecoration"] {
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
+    backdrop-filter: blur(10px);
+}
+
+/* Botones con efecto hover neón */
+button {
+    transition: all 0.3s ease !important;
+}
+
+button:hover {
+    box-shadow: 0 0 15px #00D4FF !important;
+    transform: translateY(-2px);
+}
+
+/* Efectos para chat container */
+div[data-testid="stChatMessageContent"] {
+    border-left: 2px solid #00D4FF;
+    background: rgba(20, 20, 40, 0.3) !important;
+}
+
+/* Títulos con efecto de degradado */
+h1, h2, h3 {
+    background: linear-gradient(90deg, #00D4FF, #FF2975);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700;
+}
+
+/* Tabla de datos con estilo futurista */
+div[data-testid="stTable"] {
+    border: 1px solid rgba(0, 212, 255, 0.3);
+}
+
+/* Divisores futuristas */
+hr {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #00D4FF, transparent);
+}

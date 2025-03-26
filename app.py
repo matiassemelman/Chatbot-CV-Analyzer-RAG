@@ -216,6 +216,18 @@ def mostrar_historial():
 
 # Sector del chat en web
 def area_chat():
+    st.markdown("""
+    <style>
+    div[data-testid="stChatContainer"] {
+        border-radius: 12px;
+        border: 1px solid rgba(0, 212, 255, 0.2);
+        box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
+        background: rgba(14, 17, 36, 0.4);
+        backdrop-filter: blur(10px);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     contenedorDelChat = st.container(height=400, border=True)
     with contenedorDelChat:
         mostrar_historial()
@@ -319,6 +331,43 @@ def configurar_pagina():
 def main():
     # INVOCANDO FUNCIONES DEL CHATBOT
     inicializar_estado() # Inicializa historial vacío y variables de estado
+
+    # Cargar CSS personalizado
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&display=swap');
+
+    .stApp {
+        font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Decoración de fondo futurista */
+    .stApp::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background:
+            linear-gradient(#0F1224, #0F1224),
+            radial-gradient(circle at top right, rgba(0, 212, 255, 0.1), transparent 40%),
+            radial-gradient(circle at bottom left, rgba(255, 41, 117, 0.05), transparent 40%);
+        z-index: -1;
+    }
+
+    /* Efecto de líneas hexagonales sutiles */
+    .hexagrid {
+        position: fixed;
+        width: 100%;
+        height: 100%;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='49' viewBox='0 0 28 49'%3E%3Cg fill-rule='evenodd'%3E%3Cg id='hexagons' fill='%2300D4FF' fill-opacity='0.03'%3E%3Cpath d='M13.99 9.25l13 7.5v15l-13 7.5L1 31.75v-15l12.99-7.5zM3 17.9v12.7l10.99 6.34 11-6.35V17.9l-11-6.34L3 17.9z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        opacity: 0.1;
+        z-index: -1;
+    }
+    </style>
+    <div class="hexagrid"></div>
+    """, unsafe_allow_html=True)
 
     # Verificar si la API key está configurada
     clienteUsuario = crear_usuario_groq()
