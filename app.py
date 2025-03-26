@@ -1,7 +1,6 @@
 import streamlit as st
 from groq import Groq
 import PyPDF2
-from streamlit_chromadb_connection.chromadb_connection import ChromaDBConnection
 
 # Importaciones de los nuevos módulos
 from visualizador import extract_skills_categories, create_radar_chart, create_experience_chart, create_education_chart, create_skills_balance_chart
@@ -40,76 +39,6 @@ def chunk_text(text, chunk_size=1000, overlap=200):
         start = end - overlap if end < text_length else text_length
 
     return chunks
-
-# Función para inicializar la conexión a ChromaDB
-def inicializar_chromadb_connection():
-    """Inicializa la conexión a ChromaDB"""
-    if "chromadb_conn" not in st.session_state:
-        config = {
-            "client": "PersistentClient",
-            "path": "/tmp/.chroma"
-        }
-        st.session_state.chromadb_conn = st.connection(
-            "chromadb",
-            type=ChromaDBConnection,
-            **config
-        )
-    return st.session_state.chromadb_conn
-
-# Función para almacenar chunks en ChromaDB
-def almacenar_chunks_en_chromadb(chunks, cv_name):
-    """Almacena chunks en ChromaDB usando el conector"""
-    conn = inicializar_chromadb_connection()
-    collection_name = f"cv_{cv_name.replace(' ', '_').replace('.', '_')}"
-
-    # Eliminar colección si existe
-    try:
-        conn.delete_collection(collection_name)
-    except:
-        pass
-
-    # Crear nueva colección
-    conn.create_collection(collection_name)
-
-    # Convertir a formato requerido por el conector
-    documents = []
-    metadatas = []
-    ids = []
-
-    for i, chunk in enumerate(chunks):
-        documents.append(chunk)
-        metadatas.append({"source": "cv", "chunk_id": i})
-        ids.append(f"chunk_{i}")
-
-    # Agregar documentos a la colección
-    conn.add_documents(
-        collection_name=collection_name,
-        documents=documents,
-        metadatas=metadatas,
-        ids=ids
-    )
-
-    return collection_name
-
-# Función para recuperar chunks relevantes
-def recuperar_chunks_relevantes(query, collection_name, n_results=3):
-    """Recupera chunks relevantes usando el conector"""
-    if "chromadb_conn" not in st.session_state:
-        return []
-
-    conn = st.session_state.chromadb_conn
-
-    results = conn.query(
-        collection_name=collection_name,
-        query_texts=[query],
-        n_results=n_results
-    )
-
-    # Extraer documentos de los resultados
-    if results and "documents" in results and len(results["documents"]) > 0:
-        return results["documents"][0]
-
-    return []
 
 # Nos conecta a la API, crear un usuario
 def crear_usuario_groq():
@@ -237,26 +166,8 @@ def configurar_modelo(cliente, modelo, mensaje, historial_mensajes=None):
             # Es un prompt de análisis ya formateado, lo usamos directamente
             system_message = mensaje
         else:
-            # Recuperar chunks relevantes para la consulta del usuario
-            if "collection_name" in st.session_state:
-                chunks_relevantes = recuperar_chunks_relevantes(mensaje, st.session_state.collection_name)
-                contexto_relevante = "\n\n".join(chunks_relevantes)
-
-                # Crear prompt con el contexto relevante
-                system_message = f"""
-                Eres CareerGPT, un asesor de CV y carrera profesional de clase mundial.
-
-                CONTEXTO RELEVANTE DEL CV:
-                {contexto_relevante}
-
-                INSTRUCCIONES:
-                - Responde basándote principalmente en la información del CV proporcionada arriba
-                - Si necesitas información que no está en el contexto, indícalo claramente
-                - Mantén un tono profesional y responde siempre en español
-                """
-            else:
-                # Si no hay colección, usamos el prompt normal
-                system_message = crear_system_prompt_chat(st.session_state.cv_text)
+            # Es un mensaje de usuario normal, añadimos el context del CV
+            system_message = crear_system_prompt_chat(st.session_state.cv_text)
 
         # Construir la secuencia de mensajes completa
         messages = [
@@ -308,11 +219,6 @@ def inicializar_estado():
         st.session_state.chat_history = []
     if "tipo_analisis" not in st.session_state:
         st.session_state.tipo_analisis = "detallado"
-    # Variables para ChromaDB Connection
-    if "chromadb_conn" not in st.session_state:
-        st.session_state.chromadb_conn = None
-    if "collection_name" not in st.session_state:
-        st.session_state.collection_name = None
 
 # Pantalla de configuración de API Key
 def configurar_api_key():
@@ -457,16 +363,7 @@ def configurar_pagina():
         cv_text = process_pdf(uploaded_file)
         st.session_state.cv_text = cv_text
         st.session_state.cv_chunks = chunk_text(cv_text)
-
-        # Inicializar ChromaDB connection y almacenar chunks
-        with st.spinner("Procesando CV y generando vector database..."):
-            collection_name = almacenar_chunks_en_chromadb(
-                st.session_state.cv_chunks,
-                uploaded_file.name
-            )
-            st.session_state.collection_name = collection_name
-
-        st.sidebar.success(f"CV cargado y vectorizado: {uploaded_file.name}")
+        st.sidebar.success(f"CV cargado: {uploaded_file.name}")
 
         # Reiniciar análisis para el nuevo CV
         st.session_state.cv_analizado = False
