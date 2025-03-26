@@ -1,6 +1,8 @@
 import streamlit as st
 from groq import Groq
 import PyPDF2
+import chromadb
+from sentence_transformers import SentenceTransformer
 
 # Importaciones de los nuevos módulos
 from visualizador import extract_skills_categories, create_radar_chart, create_experience_chart, create_education_chart, create_skills_balance_chart
@@ -39,6 +41,48 @@ def chunk_text(text, chunk_size=1000, overlap=200):
         start = end - overlap if end < text_length else text_length
 
     return chunks
+
+# Función para cargar el modelo de embeddings
+def cargar_modelo_embeddings():
+    """Carga el modelo de embeddings si no está ya cargado"""
+    if st.session_state.embedding_model is None:
+        with st.spinner("Cargando modelo de embeddings..."):
+            st.session_state.embedding_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+    return st.session_state.embedding_model
+
+# Función para inicializar ChromaDB
+def inicializar_chroma():
+    """Inicializa el cliente ChromaDB y crea una colección para el CV actual"""
+    if st.session_state.chroma_client is None:
+        st.session_state.chroma_client = chromadb.Client()
+
+    # Crear o recrear la colección para el CV actual
+    if st.session_state.collection is not None:
+        try:
+            st.session_state.chroma_client.delete_collection("cv_chunks")
+        except:
+            pass
+
+    st.session_state.collection = st.session_state.chroma_client.create_collection("cv_chunks")
+    return st.session_state.collection
+
+# Función para recuperar chunks relevantes
+def recuperar_chunks_relevantes(query, n_results=3):
+    """Recupera los chunks más relevantes para una consulta"""
+    if st.session_state.collection is None or st.session_state.embedding_model is None:
+        return []
+
+    # Generar embedding para la consulta
+    query_embedding = st.session_state.embedding_model.encode(query).tolist()
+
+    # Buscar chunks similares
+    results = st.session_state.collection.query(
+        query_embeddings=[query_embedding],
+        n_results=n_results
+    )
+
+    # Devolver los chunks recuperados
+    return results["documents"][0] if results["documents"] else []
 
 # Nos conecta a la API, crear un usuario
 def crear_usuario_groq():
@@ -166,8 +210,22 @@ def configurar_modelo(cliente, modelo, mensaje, historial_mensajes=None):
             # Es un prompt de análisis ya formateado, lo usamos directamente
             system_message = mensaje
         else:
-            # Es un mensaje de usuario normal, añadimos el context del CV
-            system_message = crear_system_prompt_chat(st.session_state.cv_text)
+            # Recuperar chunks relevantes para la consulta del usuario
+            chunks_relevantes = recuperar_chunks_relevantes(mensaje)
+            contexto_relevante = "\n\n".join(chunks_relevantes)
+
+            # Crear prompt con el contexto relevante
+            system_message = f"""
+            Eres CareerGPT, un asesor de CV y carrera profesional de clase mundial.
+
+            CONTEXTO RELEVANTE DEL CV:
+            {contexto_relevante}
+
+            INSTRUCCIONES:
+            - Responde basándote principalmente en la información del CV proporcionada arriba
+            - Si necesitas información que no está en el contexto, indícalo claramente
+            - Mantén un tono profesional y responde siempre en español
+            """
 
         # Construir la secuencia de mensajes completa
         messages = [
@@ -219,6 +277,13 @@ def inicializar_estado():
         st.session_state.chat_history = []
     if "tipo_analisis" not in st.session_state:
         st.session_state.tipo_analisis = "detallado"
+    # Nuevas variables para ChromaDB y embeddings
+    if "embedding_model" not in st.session_state:
+        st.session_state.embedding_model = None
+    if "chroma_client" not in st.session_state:
+        st.session_state.chroma_client = None
+    if "collection" not in st.session_state:
+        st.session_state.collection = None
 
 # Pantalla de configuración de API Key
 def configurar_api_key():
@@ -363,7 +428,23 @@ def configurar_pagina():
         cv_text = process_pdf(uploaded_file)
         st.session_state.cv_text = cv_text
         st.session_state.cv_chunks = chunk_text(cv_text)
-        st.sidebar.success(f"CV cargado: {uploaded_file.name}")
+
+        # Inicializar ChromaDB y cargar el modelo de embeddings
+        modelo_embeddings = cargar_modelo_embeddings()
+        collection = inicializar_chroma()
+
+        # Generar embeddings para cada chunk y almacenarlos
+        with st.spinner("Procesando CV y generando embeddings..."):
+            for i, chunk in enumerate(st.session_state.cv_chunks):
+                embeddings = modelo_embeddings.encode(chunk).tolist()
+                collection.add(
+                    documents=[chunk],
+                    embeddings=[embeddings],
+                    metadatas=[{"source": "cv", "chunk_id": i}],
+                    ids=[f"chunk_{i}"]
+                )
+
+        st.sidebar.success(f"CV cargado y vectorizado: {uploaded_file.name}")
 
         # Reiniciar análisis para el nuevo CV
         st.session_state.cv_analizado = False
