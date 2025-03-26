@@ -36,8 +36,17 @@ def chunk_text(text, chunk_size=1000, overlap=200):
 
 # Nos conecta a la API, crear un usuario
 def crear_usuario_groq():
-    clave_secreta = st.secrets["CLAVE_API"]
-    return Groq(api_key=clave_secreta)
+    # Intenta obtener la clave de session_state primero, si existe
+    if "GROQ_API_KEY" in st.session_state and st.session_state.GROQ_API_KEY:
+        return Groq(api_key=st.session_state.GROQ_API_KEY)
+
+    # Si no está en session_state, intenta obtenerla de secrets
+    try:
+        clave_secreta = st.secrets["CLAVE_API"]
+        return Groq(api_key=clave_secreta)
+    except KeyError:
+        # Si no hay clave configurada, devuelve None
+        return None
 
 # Configurar el modelo con contexto del CV cuando sea apropiado
 def configurar_modelo(cliente, modelo, mensaje):
@@ -77,6 +86,32 @@ def inicializar_estado():
         st.session_state.cv_text = ""
     if "cv_analizado" not in st.session_state:
         st.session_state.cv_analizado = False
+
+# Pantalla de configuración de API Key
+def configurar_api_key():
+    st.title("Configuración")
+
+    st.subheader("API Key de Groq")
+
+    # Mostrar campo para introducir la API key
+    api_key = st.text_input(
+        "API Key de Groq",
+        value=st.session_state.get("GROQ_API_KEY", ""),
+        type="password",
+        help="Ingresa tu API key de Groq para continuar"
+    )
+
+    # Mensaje informativo
+    st.info("Por favor, ingresa tu API key de Groq para continuar")
+
+    # Botón para guardar la API key
+    if st.button("Guardar API Key"):
+        if api_key:
+            st.session_state.GROQ_API_KEY = api_key
+            st.success("API Key guardada correctamente")
+            st.rerun()
+        else:
+            st.error("Por favor, ingresa una API Key válida")
 
 def actualizar_historial(rol, contenido, avatar):
     st.session_state.mensajes.append(
@@ -148,6 +183,11 @@ def configurar_pagina():
     st.title("Chat con tus CVs usando Groq")
     st.sidebar.title("Configuración")
 
+    # Agregar opción para cambiar la API key
+    if st.sidebar.button("Cambiar API Key de Groq"):
+        st.session_state.GROQ_API_KEY = ""
+        st.rerun()
+
     # Selector de modelo
     elegirModelo = st.sidebar.selectbox(
         "Elegir modelo",
@@ -179,8 +219,16 @@ def configurar_pagina():
 def main():
     # INVOCANDO FUNCIONES DEL CHATBOT
     inicializar_estado() # Inicializa historial vacío y variables de estado
+
+    # Verificar si la API key está configurada
+    clienteUsuario = crear_usuario_groq()
+
+    if not clienteUsuario:
+        configurar_api_key()
+        return  # Detener la ejecución hasta que se configure la API key
+
+    # Continuar con el flujo normal si la API key está configurada
     modelo = configurar_pagina() # Llamamos a la función, carga CV y analiza automáticamente
-    clienteUsuario = crear_usuario_groq() # Conectamos a la API a través de un usuario
     area_chat() # pone en la web el contenedor del chat
 
     # Input de chat - Permite continuar la conversación después del análisis inicial
