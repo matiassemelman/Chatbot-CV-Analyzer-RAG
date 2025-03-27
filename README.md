@@ -1,10 +1,10 @@
 # Chatbot CV Analyzer con RAG
 
 ## Descripción General
-Este proyecto es un chatbot de inteligencia artificial especializado en analizar CVs. Utiliza Streamlit para la interfaz web y la API de Google AI Studio (Gemini) para acceder a modelos de lenguaje grandes (LLMs). El sistema permite cargar CVs en formato PDF, analizarlos automáticamente y proporcionar recomendaciones para mejorarlos. Forma parte del proyecto final del curso Talento Tech.
+Este proyecto es un chatbot de inteligencia artificial especializado en analizar CVs. Utiliza Streamlit para la interfaz web y la API de Groq para acceder a varios modelos de lenguaje grande (LLMs). El sistema permite cargar CVs en formato PDF, analizarlos automáticamente y proporcionar recomendaciones para mejorarlos. Forma parte del proyecto final del curso Talento Tech.
 
 ## Configuración
-Para utilizar la aplicación, los usuarios necesitan tener una API Key de Google AI Studio, que pueden obtener registrándose en [Google AI Studio](https://ai.google.dev/). La aplicación proporciona una interfaz para ingresar esta clave al inicio o cambiarla posteriormente si es necesario.
+Para utilizar la aplicación, los usuarios necesitan tener una API Key de Groq, que pueden obtener registrándose en [Groq](https://console.groq.com/). La aplicación proporciona una interfaz para ingresar esta clave al inicio o cambiarla posteriormente si es necesario.
 
 ## Estructura del Proyecto
 - `app.py`: Código principal de la aplicación
@@ -20,21 +20,22 @@ Para utilizar la aplicación, los usuarios necesitan tener una API Key de Google
 ## Tecnologías Utilizadas
 - **Frontend**: Streamlit
 - **Backend**: Python
-- **API de IA**: Google AI Studio (Gemini)
+- **API de IA**: Groq
 - **Procesamiento de PDFs**: PyPDF2
 - **Visualización**: Plotly
 - **Modelos de IA**:
-  - gemini-1.0-pro
-  - gemini-1.5-pro
-  - gemini-1.5-flash
+  - llama3-8b-8192
+  - llama3-70b-8192
+  - mixtral-8x7b-32768
+  - deepseek-r1-distill-llama-70b
 
 ## Funcionalidades
 - Interfaz de chat interactiva
-- Configuración de API Key de Google AI Studio desde la interfaz
+- Configuración de API Key de Groq desde la interfaz
 - Carga y procesamiento de CVs en formato PDF
 - Análisis automático de CVs con recomendaciones
 - Consultas específicas sobre secciones del CV
-- Selección de diferentes modelos de Gemini
+- Selección de diferentes modelos de IA
 - Historial de conversación visual
 - Respuestas generadas en tiempo real (streaming)
 
@@ -47,7 +48,7 @@ Para utilizar la aplicación, los usuarios necesitan tener una API Key de Google
 ## Componentes Principales
 
 ### Configuración de API Key
-- Pantalla inicial para configurar la API Key de Google AI Studio
+- Pantalla inicial para configurar la API Key de Groq
 - Almacenamiento seguro de la clave en session_state
 - Opción para cambiar la clave desde la barra lateral
 
@@ -98,7 +99,7 @@ La aplicación utiliza Streamlit para crear una interfaz web amigable con:
 - Botones para análisis específicos
 
 ### Conexión con la API
-- Se conecta a la API de Gemini mediante una clave secreta
+- Se conecta a la API de Groq mediante una clave secreta
 - Configura el modelo seleccionado para procesar los mensajes
 - Gestiona la respuesta en modo streaming
 - Incluye contexto relevante del CV en las consultas
@@ -111,7 +112,7 @@ La aplicación utiliza Streamlit para crear una interfaz web amigable con:
 - Actualiza la interfaz en tiempo real
 
 ## Flujo de Trabajo
-1. El usuario configura su API Key de Google AI Studio en la pantalla inicial
+1. El usuario configura su API Key de Groq en la pantalla inicial
 2. El usuario sube su CV en formato PDF
 3. El sistema extrae y procesa el texto del documento
 4. El usuario puede elegir entre diferentes funcionalidades:
@@ -125,7 +126,7 @@ La aplicación utiliza Streamlit para crear una interfaz web amigable con:
 
 ## Funciones Principales
 - `configurar_api_key()`: Muestra la pantalla para ingresar la API Key
-- `configurar_gemini_api()`: Configura la API de Gemini usando la API Key
+- `crear_usuario_groq()`: Crea el cliente de Groq usando la API Key
 - `process_pdf()`: Extrae texto de archivos PDF
 - `chunk_text()`: Divide el texto en fragmentos manejables
 - `inicializar_estado()`: Configura el historial y almacenamiento
@@ -140,7 +141,7 @@ La aplicación utiliza Streamlit para crear una interfaz web amigable con:
 ## Requisitos del Sistema
 El archivo requirements.txt incluye todas las dependencias necesarias, entre las principales:
 - streamlit
-- google-generativeai
+- groq
 - PyPDF2
 - pandas
 - numpy
@@ -155,6 +156,3 @@ El archivo requirements.txt incluye todas las dependencias necesarias, entre las
 - Análisis específico por secciones del CV
 - Comparativa con perfiles similares en el mercado laboral
 - Generación automática de versiones del CV optimizadas para diferentes roles
-
-## Enlaces
-- Google AI Studio: https://ai.google.dev/
