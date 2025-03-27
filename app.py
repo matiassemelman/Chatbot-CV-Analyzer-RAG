@@ -1,5 +1,5 @@
 import streamlit as st
-from groq import Groq
+from google import genai
 import PyPDF2
 
 # Importaciones de los nuevos módulos
@@ -11,7 +11,7 @@ from portfolio_generator import generate_portfolio_suggestions, display_portfoli
 # Configuración de la ventana de la web
 st.set_page_config(page_title="CV Analyzer", page_icon="📄")
 
-MODELO = ['llama3-8b-8192', 'llama3-70b-8192', 'mixtral-8x7b-32768', 'deepseek-r1-distill-llama-70b']
+MODELO = ['gemini-1.0-pro', 'gemini-1.5-pro', 'gemini-1.5-flash']
 
 # Extraer texto del PDF
 def process_pdf(pdf_file):
@@ -40,19 +40,21 @@ def chunk_text(text, chunk_size=1000, overlap=200):
 
     return chunks
 
-# Nos conecta a la API, crear un usuario
-def crear_usuario_groq():
+# Configurar la API de Gemini
+def configurar_gemini_api():
     # Intenta obtener la clave de session_state primero, si existe
-    if "GROQ_API_KEY" in st.session_state and st.session_state.GROQ_API_KEY:
-        return Groq(api_key=st.session_state.GROQ_API_KEY)
+    if "GEMINI_API_KEY" in st.session_state and st.session_state.GEMINI_API_KEY:
+        genai.configure(api_key=st.session_state.GEMINI_API_KEY)
+        return True
 
     # Si no está en session_state, intenta obtenerla de secrets
     try:
         clave_secreta = st.secrets["CLAVE_API"]
-        return Groq(api_key=clave_secreta)
+        genai.configure(api_key=clave_secreta)
+        return True
     except KeyError:
-        # Si no hay clave configurada, devuelve None
-        return None
+        # Si no hay clave configurada, devuelve False
+        return False
 
 # Crear un system prompt avanzado en español para análisis de CV
 def crear_system_prompt_avanzado(cv_text):
@@ -155,7 +157,7 @@ def crear_system_prompt_chat(cv_text):
     """
 
 # Configurar el modelo con contexto del CV cuando sea apropiado
-def configurar_modelo(cliente, modelo, mensaje, historial_mensajes=None):
+def configurar_modelo(modelo, mensaje, historial_mensajes=None):
     if historial_mensajes is None:
         historial_mensajes = []
 
@@ -169,31 +171,54 @@ def configurar_modelo(cliente, modelo, mensaje, historial_mensajes=None):
             # Es un mensaje de usuario normal, añadimos el context del CV
             system_message = crear_system_prompt_chat(st.session_state.cv_text)
 
-        # Construir la secuencia de mensajes completa
-        messages = [
-            {"role": "system", "content": system_message}
+        # Configuración del modelo
+        generation_config = {
+            "temperature": 0.4,
+            "top_p": 0.95,
+            "top_k": 40,
+            "max_output_tokens": 8192,
+        }
+
+        safety_settings = [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
         ]
+
+        # Crear instancia del modelo
+        model = genai.GenerativeModel(
+            model_name=modelo,
+            generation_config=generation_config,
+            safety_settings=safety_settings
+        )
+
+        # Preparar los mensajes
+        chat = model.start_chat(history=[])
 
         # Si hay historial de mensajes previos, los incluimos
         if historial_mensajes:
-            messages.extend(historial_mensajes)
+            for msg in historial_mensajes:
+                if msg["role"] == "user":
+                    chat.send_message(msg["content"])
+                # No necesitamos añadir respuestas del asistente, ya que están incluidas en el historial del chat
 
-        # Añadimos el mensaje actual si no es un análisis automático
-        if not mensaje.startswith("Eres CareerGPT"):
-            messages.append({"role": "user", "content": mensaje})
-
-        return cliente.chat.completions.create(
-            model=modelo,
-            messages=messages,
-            stream=True
-        )
+        # Para un prompt de sistema, lo combinamos con el mensaje del usuario
+        if mensaje.startswith("Eres CareerGPT"):
+            # Es un análisis automático, enviamos el mensaje completo
+            return chat.send_message(system_message, stream=True)
+        else:
+            # Añadimos el mensaje actual con el contexto
+            prompt_completo = f"{system_message}\n\nUsuario: {mensaje}"
+            return chat.send_message(prompt_completo, stream=True)
     else:
-        # Comportamiento normal para mensajes sin CV o análisis automático
-        return cliente.chat.completions.create(
-            model=modelo,
-            messages=[{"role": "user", "content": mensaje}],
-            stream=True
+        # Comportamiento normal para mensajes sin CV
+        model = genai.GenerativeModel(
+            model_name=modelo,
+            generation_config={"temperature": 0.4, "max_output_tokens": 8192}
         )
+        chat = model.start_chat(history=[])
+        return chat.send_message(mensaje, stream=True)
 
 # Inicializar estado de la aplicación
 def inicializar_estado():
@@ -224,23 +249,23 @@ def inicializar_estado():
 def configurar_api_key():
     st.title("Configuración")
 
-    st.subheader("API Key de Groq")
+    st.subheader("API Key de Google AI Studio")
 
     # Mostrar campo para introducir la API key
     api_key = st.text_input(
-        "API Key de Groq",
-        value=st.session_state.get("GROQ_API_KEY", ""),
+        "API Key de Google AI Studio",
+        value=st.session_state.get("GEMINI_API_KEY", ""),
         type="password",
-        help="Ingresa tu API key de Groq para continuar"
+        help="Ingresa tu API key de Google AI Studio para continuar"
     )
 
     # Mensaje informativo
-    st.info("Por favor, ingresa tu API key de Groq para continuar")
+    st.info("Por favor, ingresa tu API key de Google AI Studio para continuar")
 
     # Botón para guardar la API key
     if st.button("Guardar API Key"):
         if api_key:
-            st.session_state.GROQ_API_KEY = api_key
+            st.session_state.GEMINI_API_KEY = api_key
             st.success("API Key guardada correctamente")
             st.rerun()
         else:
@@ -282,12 +307,15 @@ def area_chat():
         mostrar_historial()
 
 # Generar respuesta streaming
-def generar_respuesta(chat_completo):
+def generar_respuesta(response):
     respuesta_completa = ""
-    for frase in chat_completo:
-        if frase.choices[0].delta.content:
-            respuesta_completa += frase.choices[0].delta.content
-            yield frase.choices[0].delta.content
+
+    # Iteramos sobre el stream de respuesta de Gemini
+    for chunk in response:
+        chunk_text = chunk.text
+        if chunk_text:
+            respuesta_completa += chunk_text
+            yield chunk_text
 
     return respuesta_completa
 
@@ -312,13 +340,22 @@ def analizar_cv_automaticamente():
 
     actualizar_historial("user", instruccion_usuario, "🧚‍♀️")
 
-    clienteUsuario = crear_usuario_groq()
+    # Configuramos el modelo para el análisis
     # Usamos el modelo más potente para el análisis inicial
-    chat_completo = clienteUsuario.chat.completions.create(
-        model="llama3-70b-8192",
-        messages=[{"role": "system", "content": mensaje}],
-        stream=True
+    generation_config = {
+        "temperature": 0.4,
+        "top_p": 0.95,
+        "top_k": 40,
+        "max_output_tokens": 8192,
+    }
+
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-pro",
+        generation_config=generation_config
     )
+
+    # Enviamos el mensaje al modelo
+    chat_completo = model.generate_content(mensaje, stream=True)
 
     if chat_completo:
         with st.chat_message("assistant"):
@@ -329,12 +366,12 @@ def analizar_cv_automaticamente():
             st.rerun()
 
 def configurar_pagina():
-    st.title("Chat con tus CVs usando Groq")
+    st.title("Chat con tus CVs usando Google AI Studio")
     st.sidebar.title("Configuración")
 
     # Agregar opción para cambiar la API key
-    if st.sidebar.button("Cambiar API Key de Groq"):
-        st.session_state.GROQ_API_KEY = ""
+    if st.sidebar.button("Cambiar API Key de Google AI Studio"):
+        st.session_state.GEMINI_API_KEY = ""
         st.rerun()
 
     # Selector de modelo
@@ -434,9 +471,9 @@ def main():
     """, unsafe_allow_html=True)
 
     # Verificar si la API key está configurada
-    clienteUsuario = crear_usuario_groq()
+    configurado = configurar_gemini_api()
 
-    if not clienteUsuario:
+    if not configurado:
         configurar_api_key()
         return  # Detener la ejecución hasta que se configure la API key
 
@@ -473,7 +510,6 @@ def main():
 
             # Pasar el historial de chat para contexto
             chat_completo = configurar_modelo(
-                clienteUsuario,
                 modelo,
                 mensaje,
                 historial_mensajes=st.session_state.chat_history

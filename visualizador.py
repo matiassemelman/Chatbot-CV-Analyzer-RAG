@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 import pandas as pd
 import streamlit as st
 import json
+from google import genai
 
 def extract_skills_categories(cv_text, client, model):
     """Extract and categorize skills from CV using AI"""
@@ -25,17 +26,23 @@ def extract_skills_categories(cv_text, client, model):
     }}
     """
 
-    # Call the Groq API and get the response
-    chat_completion = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-        max_tokens=1024
+    # Configuración del modelo
+    generation_config = {
+        "temperature": 0.2,
+        "max_output_tokens": 1024
+    }
+
+    # Crear instancia del modelo
+    model_instance = genai.GenerativeModel(
+        model_name=model,
+        generation_config=generation_config
     )
 
+    # Llamar a la API de Gemini
     try:
-        # Extract the JSON from the response
-        response_text = chat_completion.choices[0].message.content
+        response = model_instance.generate_content(prompt)
+        response_text = response.text
+
         # Find the JSON part in the response
         json_start = response_text.find('{')
         json_end = response_text.rfind('}') + 1
